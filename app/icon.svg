@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="8" fill="#2563eb"/>
+  <rect x="6" y="5" width="20" height="22" rx="4" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+  <rect x="9" y="8" width="14" height="5" rx="1.5" fill="#0f172a" stroke="#60a5fa" stroke-width="0.8"/>
+  <text x="21" y="12" font-size="4" font-family="monospace" fill="#38bdf8" text-anchor="end" font-weight="bold">2026</text>
+  <circle cx="11" cy="16.5" r="1.5" fill="#94a3b8"/>
+  <circle cx="16" cy="16.5" r="1.5" fill="#94a3b8"/>
+  <circle cx="21" cy="16.5" r="1.5" fill="#38bdf8"/>
+  <circle cx="11" cy="20.5" r="1.5" fill="#94a3b8"/>
+  <circle cx="16" cy="20.5" r="1.5" fill="#94a3b8"/>
+  <circle cx="21" cy="20.5" r="1.5" fill="#38bdf8"/>
+  <circle cx="11" cy="24.5" r="1.5" fill="#94a3b8"/>
+  <circle cx="16" cy="24.5" r="1.5" fill="#38bdf8"/>
+  <rect x="19.5" y="23" width="3" height="3" rx="1" fill="#22c55e"/>
+</svg>
