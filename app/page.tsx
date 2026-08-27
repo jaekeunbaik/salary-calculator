@@ -30,7 +30,6 @@ export default function SalaryCalculatorPage() {
   // ══════════════════════════════════════════════════════════════
   const [hourlyWageInput, setHourlyWageInput] = useState<string>('10,030'); // 2026년 최저시급 기준
   const [weeklyHoursInput, setWeeklyHoursInput] = useState<string>('20');
-  const [workDaysPerWeek, setWorkDaysPerWeek] = useState<number>(5);
   const [applyInsurance, setApplyInsurance] = useState<boolean>(false); // 4대보험(9.4% 근사) 공제 여부
   const [applyTax, setApplyTax] = useState<boolean>(false); // 3.3% 사업소득세 공제 여부
 
@@ -69,7 +68,10 @@ export default function SalaryCalculatorPage() {
     const taxableMonthly = Math.max(0, monthlyGross - nonTaxable);
 
     // 1) 국민연금: 4.5% (2026 기준 월 상한액 6,170,000원, 하한액 390,000원 적용)
-    const pensionBase = Math.min(Math.max(taxableMonthly, 390000), 6170000);
+    // 과세소득이 0원이면 연금 미부과, 하한액 미만이면 하한액 기준, 상한액 초과 시 상한액 기준
+    const pensionBase = taxableMonthly > 0
+      ? Math.min(Math.max(taxableMonthly, 390000), 6170000)
+      : 0;
     const nationalPension = Math.floor((pensionBase * 0.045) / 10) * 10;
 
     // 2) 건강보험: 3.545%
@@ -110,11 +112,14 @@ export default function SalaryCalculatorPage() {
     else if (taxBase <= 500000000) calculatedAnnualTax = 94060000 + (taxBase - 300000000) * 0.40;
     else calculatedAnnualTax = 174060000 + (taxBase - 500000000) * 0.42;
 
-    // 근로소득세액공제 추정
+    // 근로소득세액공제 추정 (총급여 구간별 상한)
     let taxCredit = 0;
     if (calculatedAnnualTax <= 1300000) taxCredit = calculatedAnnualTax * 0.55;
     else taxCredit = 715000 + (calculatedAnnualTax - 1300000) * 0.3;
-    taxCredit = Math.min(taxCredit, annualTaxable > 70000000 ? 500000 : 740000);
+    let taxCreditLimit = 740000;
+    if (annualTaxable > 120000000) taxCreditLimit = 500000;
+    else if (annualTaxable > 70000000) taxCreditLimit = 660000;
+    taxCredit = Math.min(taxCredit, taxCreditLimit);
 
     const finalAnnualIncomeTax = Math.max(0, calculatedAnnualTax - taxCredit);
     const incomeTax = Math.floor((finalAnnualIncomeTax / 12) / 10) * 10;
@@ -208,12 +213,23 @@ export default function SalaryCalculatorPage() {
     };
   }, [hourlyWageInput, weeklyHoursInput, applyInsurance, applyTax]);
 
-  // 클립보드 복사 핸들러
+  // 연봉 ↔ 월급 전환 시 금액 자동 환산
+  const handleSalaryTypeChange = (newType: 'annual' | 'monthly') => {
+    if (newType === salaryType) return;
+    const currentValue = parseNumber(salaryInput);
+    if (currentValue > 0) {
+      const converted = newType === 'monthly' ? Math.round(currentValue / 12) : currentValue * 12;
+      setSalaryInput(converted.toLocaleString('ko-KR'));
+    }
+    setSalaryType(newType);
+  };
+
+  // 클립보드 복사 핸들러 (상세 공제 내역 포함)
   const handleCopyResult = () => {
     const textToCopy =
       activeTab === 'salary'
-        ? `[2026 연봉 계산 결과]\n• 세전: ${formatWon(salaryResult.monthlyGross)}/월 (연 ${formatWon(salaryResult.annualGross)})\n• 4대보험 공제: ${formatWon(salaryResult.totalInsurance)}\n• 세금 공제: ${formatWon(salaryResult.totalTax)}\n• 예상 실수령액: ${formatWon(salaryResult.monthlyNet)}/월`
-        : `[2026 주휴수당 계산 결과]\n• 시급: ${formatWon(hourlyResult.hourlyWage)}\n• 주 근무: ${hourlyResult.weeklyHours}시간\n• 주휴수당: ${formatWon(hourlyResult.holidayPay)}/주\n• 예상 주급: ${formatWon(hourlyResult.totalWeeklyGross)}\n• 예상 월급(주휴포함): ${formatWon(hourlyResult.totalMonthlyGross)}`;
+        ? `[2026 연봉 계산 결과]\n• 세전: ${formatWon(salaryResult.monthlyGross)}/월 (연 ${formatWon(salaryResult.annualGross)})\n─ 공제 상세 ─\n  국민연금: ${formatWon(salaryResult.nationalPension)}\n  건강보험: ${formatWon(salaryResult.healthInsurance)}\n  장기요양: ${formatWon(salaryResult.longTermCare)}\n  고용보험: ${formatWon(salaryResult.employmentInsurance)}\n  근로소득세: ${formatWon(salaryResult.incomeTax)}\n  지방소득세: ${formatWon(salaryResult.localIncomeTax)}\n─────────\n• 공제 합계: ${formatWon(salaryResult.totalDeduction)}\n• 예상 실수령액: ${formatWon(salaryResult.monthlyNet)}/월`
+        : `[2026 주휴수당 계산 결과]\n• 시급: ${formatWon(hourlyResult.hourlyWage)}\n• 주 근무: ${hourlyResult.weeklyHours}시간\n• 주휴수당: ${formatWon(hourlyResult.holidayPay)}/주 (${hourlyResult.holidayHours}시간)\n• 예상 주급: ${formatWon(hourlyResult.totalWeeklyGross)}\n• 예상 월급(주휴포함): ${formatWon(hourlyResult.totalMonthlyGross)}${hourlyResult.deductionAmount > 0 ? `\n• 공제 후 실수령: ${formatWon(hourlyResult.finalMonthlyNet)}/월` : ''}`;
 
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
@@ -266,7 +282,7 @@ export default function SalaryCalculatorPage() {
         {/* TAB 1: 연봉 / 월급 계산기                                  */}
         {/* ══════════════════════════════════════════════════════════ */}
         {activeTab === 'salary' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 calc-fade-in">
             {/* 입력 폼 (5 cols) */}
             <div className="lg:col-span-5 bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-xl space-y-5">
               <h2 className="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-700 pb-3">
@@ -279,7 +295,7 @@ export default function SalaryCalculatorPage() {
                 <div className="grid grid-cols-2 gap-2 bg-slate-900/60 p-1 rounded-xl border border-slate-700">
                   <button
                     type="button"
-                    onClick={() => setSalaryType('annual')}
+                    onClick={() => handleSalaryTypeChange('annual')}
                     className={`py-2 text-xs sm:text-sm font-bold rounded-lg transition ${
                       salaryType === 'annual' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
                     }`}
@@ -288,7 +304,7 @@ export default function SalaryCalculatorPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSalaryType('monthly')}
+                    onClick={() => handleSalaryTypeChange('monthly')}
                     className={`py-2 text-xs sm:text-sm font-bold rounded-lg transition ${
                       salaryType === 'monthly' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
                     }`}
@@ -392,34 +408,58 @@ export default function SalaryCalculatorPage() {
               {/* 핵심 카드: 월 실수령액 강조 */}
               <div className="bg-gradient-to-br from-blue-600 via-indigo-600 to-slate-900 rounded-3xl p-6 sm:p-7 shadow-2xl text-white relative overflow-hidden border border-blue-400/30">
                 <div className="relative z-10 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs font-extrabold uppercase tracking-wider bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-blue-100">
-                      2026 예상 월 실수령액
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyResult}
-                      className="text-xs font-bold bg-slate-900/60 hover:bg-slate-900 px-3 py-1.5 rounded-lg border border-white/10 transition flex items-center gap-1 cursor-pointer"
-                    >
-                      {copied ? '✅ 복사완료' : '📋 결과 복사'}
-                    </button>
-                  </div>
+                  {salaryResult.monthlyGross > 0 ? (
+                    <>
+                      <div className="flex justify-between items-start">
+                        <span className="text-xs font-extrabold uppercase tracking-wider bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-blue-100">
+                          2026 예상 월 실수령액
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyResult}
+                          className="text-xs font-bold bg-slate-900/60 hover:bg-slate-900 px-3 py-1.5 rounded-lg border border-white/10 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          {copied ? '✅ 복사완료' : '📋 결과 복사'}
+                        </button>
+                      </div>
 
-                  <div className="pt-2">
-                    <span className="text-3xl sm:text-5xl font-black tracking-tight text-white">
-                      {formatWon(salaryResult.monthlyNet)}
-                    </span>
-                    <span className="text-sm text-blue-200 font-semibold ml-2">/ 월</span>
-                  </div>
+                      <div className="pt-2">
+                        <span className="text-3xl sm:text-5xl font-black tracking-tight text-white">
+                          {formatWon(salaryResult.monthlyNet)}
+                        </span>
+                        <span className="text-sm text-blue-200 font-semibold ml-2">/ 월</span>
+                      </div>
 
-                  <div className="pt-3 border-t border-white/15 flex flex-wrap justify-between items-center text-xs sm:text-sm text-blue-100">
-                    <span>
-                      세전 월급: <strong>{formatWon(salaryResult.monthlyGross)}</strong>
-                    </span>
-                    <span>
-                      월 공제 합계: <strong className="text-rose-300">-{formatWon(salaryResult.totalDeduction)}</strong>
-                    </span>
-                  </div>
+                      <div className="pt-3 border-t border-white/15 flex flex-wrap justify-between items-center text-xs sm:text-sm text-blue-100">
+                        <span>
+                          세전 월급: <strong>{formatWon(salaryResult.monthlyGross)}</strong>
+                        </span>
+                        <span>
+                          월 공제 합계: <strong className="text-rose-300">-{formatWon(salaryResult.totalDeduction)}</strong>
+                        </span>
+                      </div>
+
+                      {/* 공제 비율 시각화 바 */}
+                      <div className="pt-3 space-y-1.5">
+                        <div className="w-full h-3 bg-slate-800/60 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-500"
+                            style={{ width: `${salaryResult.monthlyGross > 0 ? ((salaryResult.monthlyNet / salaryResult.monthlyGross) * 100) : 0}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-blue-200/70">
+                          <span>실수령 {salaryResult.monthlyGross > 0 ? ((salaryResult.monthlyNet / salaryResult.monthlyGross) * 100).toFixed(1) : 0}%</span>
+                          <span>공제 {salaryResult.monthlyGross > 0 ? ((salaryResult.totalDeduction / salaryResult.monthlyGross) * 100).toFixed(1) : 0}%</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-2xl">💰</p>
+                      <p className="text-blue-200 font-semibold mt-2">좌측에 세전 급여를 입력하시면</p>
+                      <p className="text-blue-200/70 text-sm">예상 실수령액이 여기에 표시됩니다.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -481,7 +521,7 @@ export default function SalaryCalculatorPage() {
         {/* TAB 2: 알바 시급 & 주휴수당 계산기                          */}
         {/* ══════════════════════════════════════════════════════════ */}
         {activeTab === 'hourly' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 calc-fade-in">
             {/* 입력 폼 (5 cols) */}
             <div className="lg:col-span-5 bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-xl space-y-5">
               <h2 className="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-700 pb-3">
@@ -530,11 +570,13 @@ export default function SalaryCalculatorPage() {
                 </label>
                 <div className="relative">
                   <input
-                    type="number"
-                    min="1"
-                    max="80"
+                    type="text"
+                    inputMode="decimal"
                     value={weeklyHoursInput}
-                    onChange={(e) => setWeeklyHoursInput(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9.]/g, '');
+                      if (v === '' || (!isNaN(parseFloat(v)) && parseFloat(v) <= 80)) setWeeklyHoursInput(v);
+                    }}
                     placeholder="20"
                     className="w-full bg-slate-900 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl px-4 py-2.5 text-base font-bold text-white text-right pr-14 outline-none transition"
                   />
@@ -576,6 +618,11 @@ export default function SalaryCalculatorPage() {
                       <p className="text-slate-400 text-[10.5px]">프리랜서 / 3.3% 알바 소득세</p>
                     </div>
                   </label>
+                  {applyInsurance && applyTax && (
+                    <p className="text-[11px] text-amber-400 bg-amber-950/40 border border-amber-800/50 rounded-lg p-2">
+                      ⚠️ 4대보험(근로자)과 3.3% 원천징수(프리랜서)는 일반적으로 동시에 적용되지 않습니다. 고용 형태에 맞는 하나만 선택하시는 것을 권장합니다.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -585,34 +632,44 @@ export default function SalaryCalculatorPage() {
               {/* 핵심 카드: 주휴수당 포함 월 환산액 */}
               <div className="bg-gradient-to-br from-indigo-600 via-blue-600 to-slate-900 rounded-3xl p-6 sm:p-7 shadow-2xl text-white border border-indigo-400/30">
                 <div className="space-y-3">
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs font-extrabold uppercase tracking-wider bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-indigo-100">
-                      예상 월 총 수령액 (주휴수당 포함)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyResult}
-                      className="text-xs font-bold bg-slate-900/60 hover:bg-slate-900 px-3 py-1.5 rounded-lg border border-white/10 transition flex items-center gap-1 cursor-pointer"
-                    >
-                      {copied ? '✅ 복사완료' : '📋 결과 복사'}
-                    </button>
-                  </div>
+                  {hourlyResult.hourlyWage > 0 && hourlyResult.weeklyHours > 0 ? (
+                    <>
+                      <div className="flex justify-between items-start">
+                        <span className="text-xs font-extrabold uppercase tracking-wider bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-indigo-100">
+                          예상 월 총 수령액 (주휴수당 포함)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyResult}
+                          className="text-xs font-bold bg-slate-900/60 hover:bg-slate-900 px-3 py-1.5 rounded-lg border border-white/10 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          {copied ? '✅ 복사완료' : '📋 결과 복사'}
+                        </button>
+                      </div>
 
-                  <div className="pt-2">
-                    <span className="text-3xl sm:text-5xl font-black tracking-tight text-white">
-                      {formatWon(hourlyResult.finalMonthlyNet)}
-                    </span>
-                    <span className="text-sm text-indigo-200 font-semibold ml-2">/ 월</span>
-                  </div>
+                      <div className="pt-2">
+                        <span className="text-3xl sm:text-5xl font-black tracking-tight text-white">
+                          {formatWon(hourlyResult.finalMonthlyNet)}
+                        </span>
+                        <span className="text-sm text-indigo-200 font-semibold ml-2">/ 월</span>
+                      </div>
 
-                  <div className="pt-3 border-t border-white/15 flex flex-wrap justify-between items-center text-xs sm:text-sm text-indigo-100">
-                    <span>
-                      예상 실수령 주급: <strong>{formatWon(hourlyResult.finalWeeklyNet)}</strong>
-                    </span>
-                    <span>
-                      주휴수당: <strong>{formatWon(hourlyResult.holidayPay)}/주</strong>
-                    </span>
-                  </div>
+                      <div className="pt-3 border-t border-white/15 flex flex-wrap justify-between items-center text-xs sm:text-sm text-indigo-100">
+                        <span>
+                          예상 실수령 주급: <strong>{formatWon(hourlyResult.finalWeeklyNet)}</strong>
+                        </span>
+                        <span>
+                          주휴수당: <strong>{formatWon(hourlyResult.holidayPay)}/주</strong>
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-2xl">⏱️</p>
+                      <p className="text-indigo-200 font-semibold mt-2">좌측에 시급과 근무시간을 입력하시면</p>
+                      <p className="text-indigo-200/70 text-sm">주휴수당과 예상 월급이 여기에 표시됩니다.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
