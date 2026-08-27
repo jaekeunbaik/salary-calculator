@@ -43,6 +43,9 @@ export const metadata: Metadata = {
     description:
       "2026년 최신 4대보험 요율 반영. 연봉·월급·시급·주휴수당 무료 계산.",
   },
+  verification: {
+    google: "coYlpU9HVJXVvz9RmjkNZQHXaurqiUiewwUGPb8qXCw",
+  },
   robots: {
     index: true,
     follow: true,
